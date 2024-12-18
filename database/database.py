@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from database.models import Base, User
+from database.models import Base, User, Order
 
 load_dotenv()
 
@@ -41,6 +41,13 @@ def post_user(user_id):
     session.add(user)
     session.commit()
     session.close()
+
+
+def get_order(user_id):
+    session = Session()
+    order = session.query(Order).filter_by(user_id=str(user_id)).order_by(Order.order_date.desc()).first()
+    session.close()
+    return order
 
 
 def update_user(user_id, dictionary):

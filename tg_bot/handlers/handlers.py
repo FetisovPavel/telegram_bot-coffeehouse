@@ -5,7 +5,7 @@ import aiogram
 from aiogram import Dispatcher, types
 from aiogram.types import ContentType
 
-from database.database import get_user, post_user, update_user, get_user_state
+from database.database import get_user, post_user, update_user, get_user_state, get_order
 from tg_bot import elements
 from tg_bot.create_bot import bot
 from tg_bot.logger.logger import print_error_double_click
@@ -149,7 +149,7 @@ async def process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery)
         logging.error(f"An error occurred: {str(e)}")
 
 
-async def process_successful_balance_accrual(message: types.Message):
+async def process_successful_pay(message: types.Message):
     user_id = str(message.from_user.id)
 
     try:
@@ -163,10 +163,15 @@ async def process_successful_balance_accrual(message: types.Message):
                                             f"{sum_balance} рублей!\n\n"
                                             f"Воспользуйтесь командой /wallet, чтобы посмотреть Ваш текущий баланс!")
 
+        elif message.successful_payment.invoice_payload == 'pay_order':
+            sum_balance = message.successful_payment.total_amount // 100
+            order = get_order(user_id)
+            await bot.send_message(user_id, f"Вы успешно оплатили заказ на сумму "
+                                            f"{sum_balance} рублей!\n\n"
+                                            f"Текущий статус заказа: {order.status}")
+
     except Exception as e:
         logging.error(f"An error occurred: {str(e)}")
-
-
 
 
 def register_handlers(dp: Dispatcher):
@@ -177,4 +182,4 @@ def register_handlers(dp: Dispatcher):
     dp.register_message_handler(process_check_money_for_pay_balance,
                                 lambda message: get_user_state(message.from_user.id) == 'choose_money')
     dp.register_pre_checkout_query_handler(process_pre_checkout_query)
-    dp.register_message_handler(process_successful_balance_accrual, content_types=ContentType.SUCCESSFUL_PAYMENT)
+    dp.register_message_handler(process_successful_pay, content_types=ContentType.SUCCESSFUL_PAYMENT)

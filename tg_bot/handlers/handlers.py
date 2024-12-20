@@ -4,7 +4,7 @@ import os
 import aiogram
 from aiogram import Dispatcher, types
 from aiogram.types import ContentType
-from database.database import get_user, post_user, update_user, get_user_state, get_order, post_item_in_order, \
+from database.database import get_user, post_user, update_user, get_user_state, post_item_in_order, \
     get_unfinished_order, get_order_items, get_menu_item, update_order, get_payment_order, get_orders
 from tg_bot import elements
 from tg_bot.create_bot import bot
@@ -169,7 +169,10 @@ async def process_getting_orders(message: types.Message):
         else:
             order_details = "Ваши оплаченные заказы:\n\n"
             for order in orders:
-                order_details += f"Заказ #{order.id} - Статус: {order.status}\n"
+                if order.status == 'In processing':
+                    order_details += f"Заказ #{order.id} - Статус: В обработке\n"
+                else:
+                    order_details += f"Заказ #{order.id} - Статус: {order.status}\n"
 
             await message.answer(order_details)
 
@@ -290,6 +293,7 @@ async def process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery)
         logging.error(f"An error occurred: {str(e)}")
 
 
+# Где вам нужно отправить сообщение админу о поступлении нового заказа
 async def process_successful_pay(message: types.Message):
     user_id = str(message.from_user.id)
 
@@ -304,6 +308,7 @@ async def process_successful_pay(message: types.Message):
                                             f"{sum_balance} рублей!\n\n"
                                             f"Воспользуйтесь командой /wallet, чтобы посмотреть Ваш текущий баланс!")
 
+        # ВОТ ЗДЕСЬ, потому что именно здесь происходит событие об оплате заказа
         elif message.successful_payment.invoice_payload == 'pay_order':
             sum_balance = message.successful_payment.total_amount // 100
             order = get_payment_order(user_id)

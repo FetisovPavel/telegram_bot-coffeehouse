@@ -75,7 +75,7 @@ def get_orders(user_id):
     user = get_user(user_id)
     session = Session()
     orders = session.query(Order).filter(Order.user_id == str(user.id),
-                                         Order.status not in ['during_payment', 'in_progress']).all()
+                                         Order.status.notin_(['during_payment', 'in_progress'])).all()
     session.close()
     return orders
 

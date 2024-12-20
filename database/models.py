@@ -16,6 +16,8 @@ class User(Base):
     account_status = Column(String)
     state = Column(String)
 
+    orders = relationship("Order", back_populates="user")
+
 
 class Order(Base):
     __tablename__ = 'orders'
@@ -28,6 +30,7 @@ class Order(Base):
     user_id = Column(Integer, ForeignKey('users.id'))
 
     user = relationship("User", back_populates="orders")
+    order_items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
 
 
 class OrderItem(Base):
@@ -37,7 +40,7 @@ class OrderItem(Base):
     order_id = Column(Integer, ForeignKey('orders.id'), nullable=False)  # Внешний ключ на заказ
     menu_item_id = Column(String, ForeignKey('menu_items.id'), nullable=False)  # Внешний ключ на пункт меню
     quantity = Column(Integer, nullable=False)  # Количество добавленного товара
-
+    size = Column(Integer)
     # Отношения
     order = relationship("Order", back_populates="order_items")  # Связь с таблицей заказов
     menu_item = relationship("MenuItem", back_populates="order_items")  # Связь с таблицей пунктов меню
@@ -49,9 +52,11 @@ class MenuItem(Base):
     id = Column(String, primary_key=True)  # Уникальный идентификатор пункта меню
     name = Column(String, nullable=False)  # Название пункта меню
     description = Column(String, nullable=False)  # Описание пункта меню
-    image = Column(String, nullable=False)  # URL изображения
+    image = Column(String)  # URL изображения
+    price = Column(Integer)
 
     variants = relationship("Variant", back_populates="menu_item", cascade="all, delete-orphan")
+    order_items = relationship("OrderItem", back_populates="menu_item", cascade="all, delete-orphan")  # Добавить это
 
 
 class Variant(Base):

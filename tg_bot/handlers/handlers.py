@@ -4,13 +4,11 @@ import os
 import aiogram
 from aiogram import Dispatcher, types
 from aiogram.types import ContentType
-
-from database.database import get_user, post_user, update_user, get_user_state, get_order
+from database.database import get_user, post_user, update_user, get_user_state, get_order, post_item_in_order, \
+    get_unfinished_order, get_order_items, get_menu_item, update_order, get_payment_order, get_orders
 from tg_bot import elements
 from tg_bot.create_bot import bot
 from tg_bot.logger.logger import print_error_double_click
-
-APP_URL = r'https://www.youtube.com/'
 
 
 async def process_start(message: types.Message):
@@ -18,20 +16,164 @@ async def process_start(message: types.Message):
 
     try:
         user = get_user(user_id)
-
         if not user:
             post_user(user_id)
 
         await bot.send_message(
             chat_id=user_id,
-            text="Добро пожаловать в кафе 'Coffee House'! ☕\n\n"
-                 "Самое время заказать что-нибудь вкусненькое 😋 "
-                 "Нажмите на кнопку ниже, чтобы приступить к заказу.",
-            reply_markup=elements.get_website_button()
+            text="Выберите кофе для заказа:",
+            reply_markup=elements.get_coffee_position_button()
+        )
+    except Exception as e:
+        logging.error(f"An error occurred: {str(e)}")
+
+
+async def process_position(callback_query: types.CallbackQuery):
+    user_id = str(callback_query.from_user.id)
+    coffee_id = callback_query.data.split('_')[1]
+
+    try:
+        await bot.edit_message_text(
+            text=f"Выберите объем для {elements.coffee_positions[int(coffee_id) - 1]['name']}:",
+            chat_id=user_id,
+            message_id=callback_query.message.message_id,
+            reply_markup=elements.get_create_size_buttons(coffee_id)
+        )
+    except Exception as e:
+        logging.error(f"An error occurred: {str(e)}")
+
+
+async def process_size(callback_query: types.CallbackQuery):
+    user_id = str(callback_query.from_user.id)
+    coffee_id, size = callback_query.data.split('_')[1:3]
+
+    try:
+        await bot.edit_message_text(
+            text=f"Выберите количество для {elements.coffee_positions[int(coffee_id) - 1]['name']} ({size} мл):",
+            chat_id=user_id,
+            message_id=callback_query.message.message_id,
+            reply_markup=elements.get_create_quantity_buttons(coffee_id, size)
+        )
+    except Exception as e:
+        logging.error(f"An error occurred: {str(e)}")
+
+
+async def process_quantity(callback_query: types.CallbackQuery):
+    user_id = str(callback_query.from_user.id)
+    coffee_id, size, quantity = callback_query.data.split('_')[1:]
+
+    try:
+
+        post_item_in_order(user_id, coffee_id, quantity, size)
+
+        await bot.edit_message_text(
+            text="Выберите кофе для заказа:",
+            chat_id=user_id,
+            message_id=callback_query.message.message_id,
+            reply_markup=elements.get_coffee_position_button()
         )
 
     except Exception as e:
+        logging.error(f"An error occurred: {str(e)}")
 
+
+async def process_finish_order(callback_query: types.CallbackQuery):
+    user_id = str(callback_query.from_user.id)
+    try:
+        try:
+            await bot.delete_message(user_id, callback_query.message.message_id)
+        except aiogram.exceptions.MessageToDeleteNotFound:
+            print_error_double_click(callback_query.from_user.id)
+
+        order = get_unfinished_order(user_id)
+
+        if order:
+            order_items = get_order_items(order.id)
+
+            order_details = f"Ваш заказ:\n\n"
+            total_price = 0
+
+            for item in order_items:
+                menu_item = get_menu_item(item.menu_item_id)
+                item_total = menu_item.price * item.quantity
+                total_price += item_total
+                order_details += f"{menu_item.name} - {item.quantity} шт. по {menu_item.price} руб. = {item_total} руб.\n"
+
+            update_order(order.id, {'total_price': total_price})
+
+            order_details += f"\nОбщая сумма: {total_price} руб."
+
+            await callback_query.message.answer(order_details, reply_markup=elements.get_order_confirm_button())
+
+        else:
+            await callback_query.message.answer("У вас нет незавершённых заказов.")
+
+    except Exception as e:
+        logging.error(f"An error occurred: {str(e)}")
+
+
+async def process_order_confirm(callback_query: types.CallbackQuery):
+    user_id = str(callback_query.from_user.id)
+    try:
+        try:
+            await bot.delete_message(user_id, callback_query.message.message_id)
+        except aiogram.exceptions.MessageToDeleteNotFound:
+            print_error_double_click(callback_query.from_user.id)
+
+        order = get_unfinished_order(user_id)
+
+        if order:
+            order_items = get_order_items(order.id)
+
+            order_details = f"Ваш заказ:\n\n"
+            total_price = 0
+
+            for item in order_items:
+                menu_item = get_menu_item(item.menu_item_id)
+                item_total = menu_item.price * item.quantity
+                total_price += item_total
+                order_details += f"{menu_item.name} - {item.quantity} шт. по {menu_item.price} руб. = {item_total} руб.\n"
+
+            order_details += f"\nОбщая сумма: {total_price} руб."
+
+            update_order(order.id, {'status': 'during_payment'})
+
+            amount = total_price * 100
+
+            await bot.send_invoice(
+                chat_id=user_id,
+                title=f"Оплата заказа №{order.id}",
+                description=order_details,
+                payload="pay_order",
+                provider_token=os.getenv('YOOTOKEN'),
+                currency="RUB",
+                start_parameter="pay_order",
+                prices=[{"label": "Руб", "amount": amount}]
+            )
+
+        else:
+            await callback_query.message.answer("У вас нет незавершённых заказов.")
+
+    except Exception as e:
+        logging.error(f"An error occurred: {str(e)}")
+
+
+async def process_getting_orders(message: types.Message):
+    user_id = str(message.from_user.id)
+
+    try:
+        orders = get_orders(user_id)
+
+        if not orders:
+            await message.answer("У вас нет оплаченных заказов.")
+        else:
+            order_details = "Ваши оплаченные заказы:\n\n"
+            for order in orders:
+                order_details += f"Заказ #{order.id} - Статус: {order.status}\n"
+
+            await message.answer(order_details)
+
+    except Exception as e:
         logging.error(f"An error occurred: {str(e)}")
 
 
@@ -76,7 +218,6 @@ async def process_create_wallet(callback_query: types.CallbackQuery):
             print_error_double_click(callback_query.from_user.id)
 
         update_user(user_id, {'loyalty_points': 0})
-        user = get_user(user_id)
 
         await bot.send_message(
             chat_id=user_id,
@@ -165,10 +306,11 @@ async def process_successful_pay(message: types.Message):
 
         elif message.successful_payment.invoice_payload == 'pay_order':
             sum_balance = message.successful_payment.total_amount // 100
-            order = get_order(user_id)
-            await bot.send_message(user_id, f"Вы успешно оплатили заказ на сумму "
+            order = get_payment_order(user_id)
+            update_order(order.id, {'status': "In processing"})
+            await bot.send_message(user_id, f"Вы успешно оплатили заказ №{order.id} на сумму "
                                             f"{sum_balance} рублей!\n\n"
-                                            f"Текущий статус заказа: {order.status}")
+                                            f"Текущий статус заказа: В обработке")
 
     except Exception as e:
         logging.error(f"An error occurred: {str(e)}")
@@ -177,6 +319,12 @@ async def process_successful_pay(message: types.Message):
 def register_handlers(dp: Dispatcher):
     dp.register_message_handler(process_start, commands=['start'])
     dp.register_message_handler(process_wallet, commands=['wallet'])
+    dp.register_message_handler(process_getting_orders, commands=['order_status'])
+    dp.register_callback_query_handler(process_position, lambda c: c.data.startswith("position_"))
+    dp.register_callback_query_handler(process_size, lambda c: c.data.startswith("size_"))
+    dp.register_callback_query_handler(process_quantity, lambda c: c.data.startswith("quantity_"))
+    dp.register_callback_query_handler(process_finish_order, lambda c: c.data.startswith("order_confirmation_"))
+    dp.register_callback_query_handler(process_order_confirm, lambda c: c.data.startswith("order_confirm_"))
     dp.register_callback_query_handler(process_create_wallet, lambda c: c.data.startswith('loyalty_confirm_'))
     dp.register_callback_query_handler(process_choose_money, lambda c: c.data.startswith('pay_balance_'))
     dp.register_message_handler(process_check_money_for_pay_balance,
